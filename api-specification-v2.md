@@ -1,6 +1,6 @@
 # AI 브랜드 인식 진단 SaaS — API 명세서 (v2)
 
-> **버전**: ERD 정식 반영판
+> **버전**: ERD 정식 반영판 + 문제점 수정판 (v2.1)
 > **기준 ERD**: 사용자가 제공한 18개 테이블 ERD 다이어그램
 > **이전 버전(v1) 대비 변경점 요약**:
 > - 모든 PK/FK를 `uuid` 타입으로 통일
@@ -161,7 +161,22 @@ Response (200):
 
 ---
 
-### 2.2 `GET /api/subscriptions` — 본인 구독 이력
+### 2.2 `PUT /api/auth/me` — 유저 정보 수정
+인증 필요.
+
+Request:
+```json
+{
+  "name": "홍길동"
+}
+```
+`email` 변경은 Supabase Auth 측에서 처리하므로 이 endpoint에서는 `name`만 수정 가능.
+
+Response (200): 갱신된 user 객체 (2.1 포맷 동일).
+
+---
+
+### 2.3 `GET /api/subscriptions` — 본인 구독 이력
 인증 필요. 본인의 `SUBSCRIPTIONS` row 전체(과거 포함) 반환.
 
 Query: `page`, `limit`, `status` (`active`/`expired`/`cancelled`)
@@ -308,7 +323,7 @@ Response (200): 갱신된 brand 전체 객체.
 ---
 
 ### 3.5 `DELETE /api/brands/:brand_id` — 브랜드 삭제
-하위 리소스(BRAND_LINKS, BRAND_FACTS, COMPETITORS, QUESTION_BANK, QUESTION_CLUSTERS, ANALYSIS_RUNS, MONITORING_SCHEDULES, BRAND_INSIGHT_HISTORY)는 cascade 삭제.
+하위 리소스(BRAND_LINKS, BRAND_FACTS, COMPETITORS, QUESTION_BANK, QUESTION_CLUSTERS, ANALYSIS_RUNS, ANALYSIS_SAMPLES, AI_RESPONSE_TRIALS, RESPONSE_ANALYSES, CONFIDENCE_METRICS, BRANDING_BOARDS, BRANDING_RECOMMENDATIONS, REPORTS, MONITORING_SCHEDULES, BRAND_INSIGHT_HISTORY) 전체 hard cascade 삭제. soft delete 없음.
 
 Response: 204 No Content.
 
@@ -582,6 +597,15 @@ Response (200):
 
 ## 8. 분석 실행 (ANALYSIS_RUNS / ANALYSIS_SAMPLES / AI_RESPONSE_TRIALS / RESPONSE_ANALYSES)
 
+### 8.0 비동기 polling 통합 규칙
+모든 비동기 endpoint(7.1, 7.3, 8.1, 9.1, 11.1)는 동일한 방식으로 상태를 확인한다.
+
+- **공통**: 응답에 항상 `job_id`를 포함. `GET /api/jobs/:job_id` (13장)로 통합 polling.
+- **예외**: `ANALYSIS_RUNS`는 run 자체가 추적 단위이므로 `GET /api/analysis-runs/:run_id`로 직접 polling도 허용. 두 방법 모두 유효.
+- **장시간 job(분석 실행 등)**: Supabase Realtime을 통한 `ANALYSIS_RUNS.status` 구독 권장. polling 시 15초 간격 이상 권장 (rate limit 고려).
+
+---
+
 ### 8.1 `POST /api/brands/:brand_id/analysis-runs` — 분석 실행 시작 (비동기)
 한 번의 호출이 `ANALYSIS_RUNS` row 1개를 만들고, 그 아래로 `ANALYSIS_SAMPLES → AI_RESPONSE_TRIALS → RESPONSE_ANALYSES`를 순차적으로 채운다.
 
@@ -619,6 +643,7 @@ Response (202):
 Errors:
 - 422 `PLAN_LIMIT_EXCEEDED`
 - 409 `RUN_ALREADY_IN_PROGRESS` (같은 brand에 진행 중 run 있을 때)
+- 422 `QUESTION_BANK_EMPTY` (해당 brand의 QUESTION_BANK row가 0개일 때 — 질문 풀 생성 먼저 필요)
 
 ---
 
@@ -652,7 +677,26 @@ Response (200):
   }
 }
 ```
-> `progress`는 응답 시점에 동적 계산. ERD에 명시 컬럼은 아니지만 polling UX에 필요.
+> `progress.expected_responses` = `total_questions_sampled × repeat_count` (run 생성 시 고정값). `percent` = `completed_responses / expected_responses × 100`.
+
+---
+
+### 8.2-1 `POST /api/analysis-runs/:run_id/cancel` — 분석 취소
+`status`가 `pending` 또는 `running`인 run만 취소 가능. worker에 cancellation signal 전송 후 `status='cancelled'`로 업데이트.
+
+Response (200):
+```json
+{
+  "ok": true,
+  "data": {
+    "run_id": "...",
+    "status": "cancelled"
+  }
+}
+```
+
+Errors:
+- 409 `RUN_ALREADY_FINISHED` (status가 succeeded/failed/cancelled인 경우)
 
 ---
 
@@ -831,6 +875,90 @@ Response (200):
 
 Errors:
 - 422 `RUN_NOT_FINISHED` (status가 `succeeded`가 아닐 때)
+
+---
+
+### 8.6 점수 계산 공식 (ANALYSIS_RUNS 점수 컬럼)
+
+분석 worker가 `AI_RESPONSE_TRIALS` + `RESPONSE_ANALYSES` 집계 완료 후 아래 공식으로 계산, `ANALYSIS_RUNS`에 업데이트.
+
+#### visibility_score (0~100)
+> AI가 얼마나 자주 이 브랜드를 언급하는가
+
+```
+brand_mentioned_count = brand_mentioned=true인 trials 수
+total_trials = 전체 AI_RESPONSE_TRIALS 수
+
+visibility_score = (brand_mentioned_count / total_trials) × 100
+```
+
+#### ranking_score (0~100)
+> 언급될 때 몇 위로 등장하는가 (1위에 가까울수록 고점)
+
+```
+언급된 trials만 대상 (brand_mentioned=true)
+avg_rank = AVG(mention_rank)
+
+ranking_score = MAX(0, 100 - (avg_rank - 1) × 20)
+-- rank 1 → 100점, rank 2 → 80점, rank 3 → 60점, rank 6 이상 → 0점
+```
+
+#### stability_score (0~100)
+> 반복 질의에서 결과가 얼마나 일관적인가 (분산이 낮을수록 고점)
+
+```
+avg_variance = AVG(CONFIDENCE_METRICS.variance_score) -- 0~1
+stability_score = (1 - avg_variance) × 100
+```
+
+#### image_match_score (0~100)
+> AI가 인식하는 브랜드 이미지가 desired_image와 얼마나 일치하는가
+
+```
+desired_keywords = BRANDS.desired_image를 콤마로 split한 배열
+perceived_keywords = 전체 RESPONSE_ANALYSES.image_keywords를 합산한 빈도 상위 N개
+
+match_count = desired_keywords 중 perceived_keywords에 포함된 수
+image_match_score = (match_count / desired_keywords.length) × 100
+```
+
+#### accuracy_score (0~100)
+> AI가 제공하는 브랜드 정보가 공식 정보(BRAND_FACTS)와 얼마나 정확한가
+
+```
+base = 100
+wrong_penalty = COUNT(DISTINCT wrong_info 항목) × 10   -- 최대 50점 차감
+missing_penalty = COUNT(DISTINCT missing_info 항목) × 5 -- 최대 30점 차감
+
+accuracy_score = MAX(0, base - wrong_penalty - missing_penalty)
+```
+> `wrong_info`, `missing_info`는 전체 RESPONSE_ANALYSES에서 중복 제거 후 합산.
+
+#### competitor_pressure_score (0~100)
+> 경쟁 브랜드가 우리 브랜드를 얼마나 압박하는가 (낮을수록 압박이 강함)
+
+```
+-- 우리 브랜드가 언급된 trials 중 경쟁사가 더 높은 순위로 등장한 비율
+outrank_rate = (경쟁사가 우리보다 높은 rank로 등장한 trials 수) / (우리가 언급된 trials 수)
+
+competitor_pressure_score = MAX(0, 100 - outrank_rate × 100)
+-- outrank_rate=0 → 100점 (경쟁 없음), outrank_rate=1 → 0점 (항상 밀림)
+```
+
+#### total_score (0~100)
+> 6개 점수의 가중 평균
+
+```
+total_score =
+  visibility_score          × 0.25 +
+  ranking_score             × 0.20 +
+  stability_score           × 0.15 +
+  image_match_score         × 0.20 +
+  accuracy_score            × 0.10 +
+  competitor_pressure_score × 0.10
+```
+
+> **Worker 책임**: 점수 계산 후 `ANALYSIS_RUNS` 업데이트, `BRAND_INSIGHT_HISTORY`에 스냅샷 insert, `status='succeeded'`로 변경까지 한 트랜잭션에서 처리.
 
 ---
 
@@ -1170,6 +1298,9 @@ Headers: `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`.
 | `PLAN_NOT_ALLOWED` | 422 | 플랜에서 허용되지 않는 기능 |
 | `RUN_NOT_FINISHED` | 422 | run이 succeeded 상태 아님 |
 | `BRANDING_BOARD_NOT_READY` | 422 | 보드 미생성 |
+| `QUESTION_BANK_EMPTY` | 422 | 질문 풀이 비어있음 — 분석 실행 전 질문 풀 생성 필요 |
+| `RUN_ALREADY_FINISHED` | 409 | 이미 종료된 run에 취소 시도 |
+| `ANALYSIS_CANCELLED` | 409 | 취소된 run에 후속 작업 시도 |
 | `RATE_LIMITED` | 429 | Rate limit 초과 |
 | `INTERNAL_ERROR` | 500 | 서버 에러 |
 | `AI_PROVIDER_ERROR` | 502 | Gemini 등 외부 AI 호출 실패 |
@@ -1190,19 +1321,83 @@ Headers: `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`.
 
 ---
 
-## 18. 정해야 할 정책 (체크리스트)
-ERD만으로는 결정 못 하는, 비즈니스 룰 차원의 빈칸들.
+## 18. 확정된 정책
 
-- [ ] `BRAND_LINKS.link_type` 정확한 enum 확정
-- [ ] `BRAND_FACTS.fact_type`, `source_type` 정확한 enum 확정
-- [ ] `BRANDS.desired_image` 저장 형식 — 콤마 구분 문자열인지 다른 구분자인지 (ERD에 `text` 타입만 명시)
-- [ ] `AI_RESPONSE_TRIALS.source_urls` jsonb 형식 — 문자열 배열인지 객체 배열인지
-- [ ] `RESPONSE_ANALYSES.detected_facts`/`wrong_info`/`missing_info` jsonb 스키마 확정
-- [ ] `MONITORING_SCHEDULES.frequency` enum, `daily` 사용 시 정확한 cron 표현
-- [ ] 한 brand에 monitoring schedule 여러 개 허용 여부
-- [ ] 한 run에 branding board 1:1인지 1:N인지 (덮어쓰기 vs 누적)
-- [ ] 브랜드 삭제 시 ANALYSIS_RUNS 등 cascade인지 soft delete인지
-- [ ] SUBSCRIPTIONS 결제 흐름 (Toss Payments/Stripe webhook 별도 설계 필요)
+### 18.1 Enum 확정값
+
+**`BRAND_LINKS.link_type`**
+```
+website | instagram | naver_place | google_map | youtube | blog | other
+```
+
+**`BRAND_FACTS.fact_type`**
+```
+business_hours | address | price_range | menu | parking | reservation | service | strength | other
+```
+
+**`BRAND_FACTS.source_type`**
+```
+user_input | official_website | naver_place | google_map | user_upload | ai_inferred
+```
+
+**`MONITORING_SCHEDULES.frequency`**
+```
+monthly | weekly | daily | custom
+```
+- `monthly` cron: `0 3 1 * *`
+- `weekly` cron: `0 3 * * 1` (매주 월요일 새벽 3시)
+- `daily` cron: `0 3 * * *`
+
+---
+
+### 18.2 jsonb 스키마 확정
+
+**`BRANDS.desired_image`** — 콤마 구분 문자열로 저장. 서버에서 `,` split 처리.
+```
+"조용한, 혼자 가기 좋은, 작업하기 좋은, 따뜻한"
+```
+
+**`AI_RESPONSE_TRIALS.source_urls`** — 문자열 배열
+```json
+["https://moodhouse.example.com", "https://map.naver.com/..."]
+```
+
+**`RESPONSE_ANALYSES.detected_facts`**
+```json
+[
+  { "fact_type": "business_hours", "value": "10:00~22:00" },
+  { "fact_type": "address", "value": "서울 성동구 성수동" }
+]
+```
+
+**`RESPONSE_ANALYSES.wrong_info`**
+```json
+[
+  { "fact_type": "business_hours", "official_value": "10:00~22:00", "ai_value": "11:00~21:00" }
+]
+```
+
+**`RESPONSE_ANALYSES.missing_info`** — 문자열 배열
+```json
+["주차 가능 여부", "예약 가능 여부"]
+```
+
+**`RESPONSE_ANALYSES.competitor_mentions`** — 문자열 배열
+```json
+["A카페", "B카페"]
+```
+
+---
+
+### 18.3 비즈니스 룰 확정
+
+| 항목 | 결정값 |
+|---|---|
+| 한 brand에 monitoring schedule | 활성(active) 스케줄 **1개** 제한. 신규 등록 시 기존 active 스케줄 자동 paused |
+| 한 run에 branding board | **1:1**. 재생성 시 기존 board + recommendations 삭제 후 덮어쓰기 허용 |
+| 브랜드 삭제 방식 | **Hard cascade 삭제** (soft delete 없음). 섹션 3.5 참고 |
+| BRAND_INSIGHT_HISTORY insert 주체 | **분석 worker** 책임. 점수 계산 후 ANALYSIS_RUNS 업데이트와 같은 트랜잭션에서 insert |
+| SUBSCRIPTIONS 결제 흐름 | Toss Payments webhook 별도 명세 작성 필요 (MVP 범위 외) |
 
 ---
 
