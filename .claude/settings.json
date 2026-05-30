@@ -1,0 +1,28 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install *)",
+      "Bash(npx tsc *)",
+      "Bash(npm run *)",
+      "Bash(tee /tmp/dev.log)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:3000/login)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:3000/signup)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:3000/)",
+      "Bash(curl -s -c /tmp/cookies.txt -X POST http://localhost:3000/api/auth/login -H \"Content-Type: application/json\" -d '{\"email\":\"demo@vibecheck.app\",\"password\":\"demo\"}')",
+      "Bash(curl -s -b /tmp/cookies.txt http://localhost:3000/api/auth/me)",
+      "Bash(curl -s -b /tmp/cookies.txt http://localhost:3000/api/brands)",
+      "Bash(curl -s -o /dev/null -w \"brands page: %{http_code}\\\\n\" -b /tmp/cookies.txt http://localhost:3000/brands)",
+      "Bash(curl -s -o /dev/null -w \"new brand page: %{http_code}\\\\n\" -b /tmp/cookies.txt http://localhost:3000/brands/new)",
+      "Bash(curl -s -b /tmp/cookies.txt -X POST http://localhost:3000/api/brands -H \"Content-Type: application/json\" -d '{\"brand_name\":\"테스트 카페\",\"category\":\"cafe\",\"region\":\"서울 강남\",\"desired_image\":\"조용한, 작업하기 좋은\"}')",
+      "Bash(python -m json.tool)",
+      "Bash(curl -s -b /tmp/cookies.txt \"http://localhost:3000/api/analysis-runs/b42685b4-2c12-481d-b232-d98780af9e31\")",
+      "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\)['data']; print\\(f\\\\\"status={d['status']} percent={d['progress']['percent']} step={d['current_step']}/{len\\(d['steps']\\)}\\\\\"\\)\")",
+      "Bash(curl -s -b /tmp/cookies.txt \"http://localhost:3000/api/analysis-runs/b42685b4-2c12-481d-b232-d98780af9e31/dashboard\")",
+      "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\)['data']; print\\('total:', d['scores']['total_score']\\); print\\('image_desired:', d['image']['desired'][:3]\\); print\\('competitors:', [c['competitor_name'] for c in d['competitors']['top_co_mentioned']]\\)\")",
+      "Bash(curl -s -o /dev/null -w \"dashboard page: %{http_code}\\\\n\" -b /tmp/cookies.txt \"http://localhost:3000/brands/af5e112e-d068-48a2-a34d-b5e2b411f19e/dashboard/b42685b4-2c12-481d-b232-d98780af9e31\")",
+      "Bash(curl -s -o /dev/null -w \"progress page \\(cancelled-run\\): %{http_code}\\\\n\" -b /tmp/cookies.txt \"http://localhost:3000/brands/af5e112e-d068-48a2-a34d-b5e2b411f19e/analysis/b42685b4-2c12-481d-b232-d98780af9e31\")",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" --max-time 2 http://localhost:3000/login)",
+      "PowerShell(Get-NetTCPConnection -LocalPort 3000 -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess -Unique | ForEach-Object { try { Stop-Process -Id $_ -Force -ErrorAction Stop; \"killed PID $_\" } catch { \"could not kill PID $_\" } })"
+    ]
+  }
+}
