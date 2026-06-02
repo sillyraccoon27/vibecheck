@@ -1,10 +1,10 @@
 import { NextRequest } from "next/server";
-import { findUserByEmail, createUser } from "@/lib/db";
+import { findUserByEmail } from "@/lib/db";
 import { errors, ok } from "@/lib/api-response";
 import { setSession } from "@/lib/auth";
 
-// 데모 모드: 입력한 이메일이 존재하면 그 계정으로 로그인,
-// 없으면 즉석에서 계정을 만들고 로그인시킨다. (실제 비밀번호 검증은 Supabase Auth로 이관 예정)
+// 이메일이 가입돼 있고 비밀번호가 일치하면 로그인.
+// 미가입 이메일은 회원가입으로 안내. (실제 비밀번호 검증은 Supabase Auth로 이관 예정)
 export async function POST(req: NextRequest) {
   let body: { email?: string; password?: string };
   try {
@@ -14,15 +14,16 @@ export async function POST(req: NextRequest) {
   }
   const email = body.email?.trim();
   const password = body.password ?? "";
-  if (!email) return errors.validation("이메일을 입력하세요.");
+  if (!email || !password) {
+    return errors.validation("이메일과 비밀번호를 입력하세요.");
+  }
 
-  let user = findUserByEmail(email);
+  const user = findUserByEmail(email);
   if (!user) {
-    user = createUser({
-      email,
-      name: email.split("@")[0],
-      password_hash: password,
-    });
+    return errors.validation("가입되지 않은 이메일입니다. 먼저 회원가입을 해주세요.");
+  }
+  if (user.password_hash !== password) {
+    return errors.validation("비밀번호가 일치하지 않습니다.");
   }
   setSession(user.user_id);
   return ok({

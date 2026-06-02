@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-const SUGGESTIONS = ["베이직코스메틱", "글로우랩", "어반핏", "디저트하우스"];
+const SUGGESTIONS = ["스타벅스", "투썸플레이스", "이디야", "맥도날드"];
 
 export function LandingSearch() {
   const router = useRouter();
@@ -12,7 +12,7 @@ export function LandingSearch() {
   function submit(value: string) {
     const trimmed = value.trim();
     if (!trimmed) return;
-    router.push(`/brands?q=${encodeURIComponent(trimmed)}`);
+    router.push(`/search?q=${encodeURIComponent(trimmed)}`);
   }
 
   return (

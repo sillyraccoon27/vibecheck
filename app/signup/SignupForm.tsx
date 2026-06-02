@@ -28,7 +28,7 @@ export function SignupForm() {
       });
       const j = await res.json();
       if (!res.ok || !j.ok) throw new Error(j.error?.message || "가입 실패");
-      router.push("/brands");
+      router.push("/");
       router.refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : "가입 실패");

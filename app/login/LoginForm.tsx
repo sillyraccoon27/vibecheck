@@ -22,7 +22,7 @@ export function LoginForm() {
       });
       const j = await res.json();
       if (!res.ok || !j.ok) throw new Error(j.error?.message || "로그인 실패");
-      router.push("/brands");
+      router.push("/");
       router.refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : "로그인 실패");
@@ -39,7 +39,7 @@ export function LoginForm() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: "demo@vibecheck.app", password: "demo" }),
       });
-      router.push("/brands");
+      router.push("/");
       router.refresh();
     } finally {
       setLoading(false);
