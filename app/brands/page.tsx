@@ -7,9 +7,18 @@ import { listBrandsByUser, findLatestRunForBrand } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
-export default function BrandsPage() {
+const DEMO_USER_ID = "demo-user-id";
+
+export default function BrandsPage({
+  searchParams,
+}: {
+  searchParams: { tab?: string };
+}) {
   const user = getCurrentUser();
   if (!user) redirect("/login");
+
+  const isDemo = user.user_id === DEMO_USER_ID;
+  const activeTab = searchParams.tab ?? "all";
 
   const brands = listBrandsByUser(user.user_id);
   const items = brands.map((b) => {
@@ -26,6 +35,17 @@ export default function BrandsPage() {
         : null,
     };
   });
+
+  const filtered =
+    activeTab === "succeeded"
+      ? items.filter((b) => b.latest_run?.status === "succeeded")
+      : activeTab === "running"
+      ? items.filter(
+          (b) =>
+            b.latest_run?.status === "running" ||
+            b.latest_run?.status === "pending"
+        )
+      : items;
 
   return (
     <div className="min-h-screen bg-canvas">
@@ -47,17 +67,27 @@ export default function BrandsPage() {
         </div>
 
         <div className="mt-6 flex gap-3 border-b border-canvas-border">
-          <Tab active>전체</Tab>
-          <Tab>분석 완료</Tab>
-          <Tab>진행 중</Tab>
+          <TabLink href="/brands" active={activeTab === "all"}>전체</TabLink>
+          <TabLink href="/brands?tab=succeeded" active={activeTab === "succeeded"}>분석 완료</TabLink>
+          <TabLink href="/brands?tab=running" active={activeTab === "running"}>진행 중</TabLink>
           <div className="ml-auto pb-3 text-sm text-ink-subtle">최근 등록 순</div>
         </div>
 
-        {items.length === 0 ? (
+        {isDemo && (
+          <div className="mt-8 rounded-2xl border border-canvas-border bg-white p-8 text-center shadow-card">
+            <p className="text-sm text-ink-muted">데모 계정으로 둘러보고 계세요.</p>
+            <p className="mt-1 text-base font-semibold text-ink">내 브랜드를 직접 등록하려면 로그인이 필요해요.</p>
+            <Link href="/login" className="btn-primary mt-4 inline-flex">
+              로그인 해서 이용하기
+            </Link>
+          </div>
+        )}
+
+        {filtered.length === 0 ? (
           <EmptyState />
         ) : (
           <div className="mt-6 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
-            {items.map((b) => (
+            {filtered.map((b) => (
               <BrandCard key={b.brand_id} brand={b} />
             ))}
           </div>
@@ -67,9 +97,18 @@ export default function BrandsPage() {
   );
 }
 
-function Tab({ children, active }: { children: React.ReactNode; active?: boolean }) {
+function TabLink({
+  href,
+  active,
+  children,
+}: {
+  href: string;
+  active: boolean;
+  children: React.ReactNode;
+}) {
   return (
-    <button
+    <Link
+      href={href}
       className={`pb-3 text-sm font-medium ${
         active
           ? "border-b-2 border-ink text-ink"
@@ -77,7 +116,7 @@ function Tab({ children, active }: { children: React.ReactNode; active?: boolean
       }`}
     >
       {children}
-    </button>
+    </Link>
   );
 }
 
