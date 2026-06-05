@@ -14,7 +14,7 @@ export default function HomePage() {
       </div>
 
       <header className="relative z-10 flex items-center justify-between px-6 py-4 sm:px-8">
-        <LandingMenu />
+        <LandingMenu isLoggedIn={!!user} />
         <Link
           href="/"
           className="flex items-center gap-2 text-sm font-semibold tracking-tight text-ink"
