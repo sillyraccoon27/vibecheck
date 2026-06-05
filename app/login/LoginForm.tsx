@@ -31,21 +31,6 @@ export function LoginForm() {
     }
   }
 
-  async function demoLogin() {
-    setLoading(true);
-    try {
-      await fetch("/api/auth/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: "demo@vibecheck.app", password: "demo" }),
-      });
-      router.push("/");
-      router.refresh();
-    } finally {
-      setLoading(false);
-    }
-  }
-
   return (
     <form onSubmit={submit} className="mt-8 space-y-4">
       <div>
@@ -78,13 +63,6 @@ export function LoginForm() {
       {error && <div className="text-xs text-danger">{error}</div>}
       <button type="submit" disabled={loading} className="btn-primary w-full">
         {loading ? "로그인 중..." : "로그인"}
-      </button>
-      <div className="relative my-3">
-        <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-canvas-border" /></div>
-        <div className="relative flex justify-center text-xs"><span className="bg-canvas-card px-2 text-ink-subtle">or</span></div>
-      </div>
-      <button type="button" onClick={demoLogin} className="btn-secondary w-full">
-        데모 계정으로 둘러보기
       </button>
     </form>
   );

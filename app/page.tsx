@@ -101,21 +101,13 @@ export default function HomePage() {
           ))}
         </div>
 
-        <div className="mt-12 text-xs text-ink-subtle">
-          {user ? (
+        {user && (
+          <div className="mt-12 text-xs text-ink-subtle">
             <Link href="/brands" className="underline underline-offset-4 hover:text-ink">
               내 브랜드 분석으로 이동 →
             </Link>
-          ) : (
-            <span>
-              로그인 없이도 샘플 결과를{" "}
-              <Link href="/brands" className="underline underline-offset-4 hover:text-ink">
-                둘러볼 수 있어요
-              </Link>
-              .
-            </span>
-          )}
-        </div>
+          </div>
+        )}
       </section>
     </main>
   );

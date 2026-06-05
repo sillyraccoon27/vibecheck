@@ -7,8 +7,6 @@ import { listBrandsByUser, findLatestRunForBrand } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
-const DEMO_USER_ID = "demo-user-id";
-
 export default function BrandsPage({
   searchParams,
 }: {
@@ -17,7 +15,6 @@ export default function BrandsPage({
   const user = getCurrentUser();
   if (!user) redirect("/login");
 
-  const isDemo = user.user_id === DEMO_USER_ID;
   const activeTab = searchParams.tab ?? "all";
 
   const brands = listBrandsByUser(user.user_id);
@@ -72,16 +69,6 @@ export default function BrandsPage({
           <TabLink href="/brands?tab=running" active={activeTab === "running"}>진행 중</TabLink>
           <div className="ml-auto pb-3 text-sm text-ink-subtle">최근 등록 순</div>
         </div>
-
-        {isDemo && (
-          <div className="mt-8 rounded-2xl border border-canvas-border bg-white p-8 text-center shadow-card">
-            <p className="text-sm text-ink-muted">데모 계정으로 둘러보고 계세요.</p>
-            <p className="mt-1 text-base font-semibold text-ink">내 브랜드를 직접 등록하려면 로그인이 필요해요.</p>
-            <Link href="/login" className="btn-primary mt-4 inline-flex">
-              로그인 해서 이용하기
-            </Link>
-          </div>
-        )}
 
         {filtered.length === 0 ? (
           <EmptyState />

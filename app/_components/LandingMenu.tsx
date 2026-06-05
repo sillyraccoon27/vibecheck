@@ -89,10 +89,6 @@ export function LandingMenu({ isLoggedIn = false }: { isLoggedIn?: boolean }) {
               </div>
             </nav>
 
-            <div className="mt-auto rounded-lg border border-canvas-border bg-canvas p-4 text-xs leading-relaxed text-ink-muted">
-              둘러보기 모드에서는 샘플 분석 결과를 보여드려요.<br />
-              실제 분석은 로그인 후 이용 가능합니다.
-            </div>
           </aside>
         </div>,
         document.body
