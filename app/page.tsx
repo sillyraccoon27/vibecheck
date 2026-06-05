@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { getCurrentUser } from "@/lib/auth";
+import { ProfileMenu } from "@/components/ProfileMenu";
 import { LandingMenu } from "./_components/LandingMenu";
 import { LandingSearch } from "./_components/LandingSearch";
 
@@ -30,14 +31,7 @@ export default function HomePage() {
               <Link href="/brands" className="btn-secondary">
                 내 브랜드
               </Link>
-              <div className="hidden h-9 w-9 items-center justify-center rounded-full bg-ink text-xs font-semibold text-white sm:flex">
-                {user.name?.[0]?.toUpperCase() ?? user.email[0]?.toUpperCase() ?? "U"}
-              </div>
-              <form action="/api/auth/logout" method="POST">
-                <button type="submit" className="btn-ghost text-xs">
-                  로그아웃
-                </button>
-              </form>
+              <ProfileMenu name={user.name || user.email} variant="dark" />
             </>
           ) : (
             <>

@@ -7,8 +7,6 @@ import type {
   Brand,
   BrandLink,
   Competitor,
-  Subscription,
-  User,
 } from "../types";
 import { DEFAULT_STEPS, getStore } from "./mock";
 import { isSupabaseConfigured } from "./supabase";
@@ -17,59 +15,8 @@ export function backendKind(): "supabase" | "mock" {
   return isSupabaseConfigured() ? "supabase" : "mock";
 }
 
-// 현재는 두 경로 모두 mock store를 사용한다.
-// Supabase 스키마/마이그레이션이 준비되면 backendKind() 분기 안에서 실제 쿼리로 교체한다.
-
-// ───────── Users / Auth ─────────
-
-export function findUserByEmail(email: string): User | null {
-  const store = getStore();
-  for (const user of store.users.values()) {
-    if (user.email.toLowerCase() === email.toLowerCase()) return user;
-  }
-  return null;
-}
-
-export function findUserById(user_id: string): User | null {
-  return getStore().users.get(user_id) ?? null;
-}
-
-export function createUser(input: {
-  email: string;
-  name: string;
-  password_hash: string;
-}): User {
-  const store = getStore();
-  const user: User = {
-    user_id: uuid(),
-    email: input.email,
-    name: input.name,
-    password_hash: input.password_hash,
-    created_at: new Date().toISOString(),
-  };
-  store.users.set(user.user_id, user);
-
-  // free 플랜 자동 부여
-  const sub: Subscription = {
-    subscription_id: uuid(),
-    user_id: user.user_id,
-    plan_name: "free",
-    status: "active",
-    started_at: new Date().toISOString(),
-    ended_at: null,
-  };
-  store.subscriptions.set(sub.subscription_id, sub);
-
-  return user;
-}
-
-export function getActiveSubscription(user_id: string): Subscription | null {
-  const store = getStore();
-  for (const sub of store.subscriptions.values()) {
-    if (sub.user_id === user_id && sub.status === "active") return sub;
-  }
-  return null;
-}
+// 사용자/인증 데이터는 lib/db/users.ts 가 담당(Supabase 영속화).
+// 브랜드/분석 데이터는 데모용 in-memory mock store를 사용한다.
 
 // ───────── Brands ─────────
 

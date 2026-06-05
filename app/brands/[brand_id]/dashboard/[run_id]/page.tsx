@@ -4,6 +4,7 @@ import { Header } from "@/components/Header";
 import { ScoreCard, SCORE_META } from "@/components/ScoreCard";
 import { getCurrentUser } from "@/lib/auth";
 import { findBrand, findRun, listCompetitors } from "@/lib/db";
+import { generateRecommendations } from "@/lib/recommendations";
 
 export const dynamic = "force-dynamic";
 
@@ -42,6 +43,19 @@ export default async function DashboardPage({
     competitor_pressure_score: run.competitor_pressure_score ?? 0,
     total_score: run.total_score ?? 0,
   };
+
+  const recommendations = generateRecommendations({
+    brand: {
+      brand_name: brand.brand_name,
+      category: brand.category,
+      region: brand.region,
+      desired_image: brand.desired_image,
+      target_customer: brand.target_customer,
+    },
+    scores,
+    competitors: competitorPool,
+    gapKeywords,
+  });
 
   return (
     <div className="min-h-screen bg-canvas">
@@ -163,23 +177,11 @@ export default async function DashboardPage({
 
           <div className="card p-6">
             <h2 className="text-base font-semibold text-ink">개선 추천</h2>
-            <p className="mt-1 text-xs text-ink-muted">AI 인식을 끌어올릴 액션</p>
+            <p className="mt-1 text-xs text-ink-muted">{brand.brand_name} 진단 결과에 맞춘 우선순위 액션</p>
             <ul className="mt-4 space-y-3 text-sm">
-              <Recommendation
-                priority="high"
-                title="네이버 플레이스 소개글에 '작업하기 좋은' 강조"
-                desc="현재 AI는 '디저트가 좋은 카페'로 인식 중. 원하는 이미지의 키워드를 메타 정보에 노출"
-              />
-              <Recommendation
-                priority="medium"
-                title="콘센트/1인석 정보 명시"
-                desc="경쟁사 대비 약한 키워드. 사진 + 텍스트로 공식 채널에 추가"
-              />
-              <Recommendation
-                priority="low"
-                title="영업시간 표기 통일"
-                desc="공식 10:00~22:00, AI는 11:00~21:00로 인식. 모든 채널 표기 통일"
-              />
+              {recommendations.map((r, i) => (
+                <Recommendation key={i} priority={r.priority} title={r.title} desc={r.desc} />
+              ))}
             </ul>
           </div>
         </section>

@@ -35,73 +35,9 @@ function freshStore(): Store {
   };
 }
 
+// 데모 시드는 제거됨. 빈 스토어로 시작하며 실제 데이터는 런타임에 생성된다.
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 function seed(_store: Store) {}
-
-function buildSeededCompletedRun(brand_id: string, _desired_image: string): AnalysisRun {
-  const now = new Date();
-  const started = new Date(now.getTime() - 30 * 60 * 1000).toISOString();
-  const completed = new Date(now.getTime() - 1 * 60 * 1000).toISOString();
-  const visibility = 30 + Math.random() * 60;
-  const ranking = 40 + Math.random() * 50;
-  const stability = 60 + Math.random() * 30;
-  const image_match = 30 + Math.random() * 50;
-  const accuracy = 70 + Math.random() * 30;
-  const competitor_pressure = 40 + Math.random() * 50;
-  const total =
-    visibility * 0.25 +
-    ranking * 0.2 +
-    stability * 0.15 +
-    image_match * 0.2 +
-    accuracy * 0.1 +
-    competitor_pressure * 0.1;
-  return {
-    run_id: uuid(),
-    brand_id,
-    status: "succeeded",
-    total_questions_sampled: 500,
-    total_responses_collected: 1500,
-    expected_responses: 1500,
-    visibility_score: round1(visibility),
-    ranking_score: round1(ranking),
-    stability_score: round1(stability),
-    image_match_score: round1(image_match),
-    accuracy_score: round1(accuracy),
-    competitor_pressure_score: round1(competitor_pressure),
-    total_score: round1(total),
-    started_at: started,
-    completed_at: completed,
-    current_step: 6,
-    steps: DEFAULT_STEPS,
-  };
-}
-
-function buildSeededRunningRun(brand_id: string): AnalysisRun {
-  const started = new Date().toISOString();
-  return {
-    run_id: uuid(),
-    brand_id,
-    status: "running",
-    total_questions_sampled: 500,
-    total_responses_collected: 820,
-    expected_responses: 1500,
-    visibility_score: null,
-    ranking_score: null,
-    stability_score: null,
-    image_match_score: null,
-    accuracy_score: null,
-    competitor_pressure_score: null,
-    total_score: null,
-    started_at: started,
-    completed_at: null,
-    current_step: 3,
-    steps: DEFAULT_STEPS,
-  };
-}
-
-function round1(v: number): number {
-  return Math.round(v * 10) / 10;
-}
 
 export const DEFAULT_STEPS = [
   "질문 풀 생성",

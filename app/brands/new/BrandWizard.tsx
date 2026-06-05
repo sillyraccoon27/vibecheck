@@ -15,7 +15,26 @@ type Link = { link_type: string; url: string };
 type Competitor = { competitor_name: string; category: string; region: string; url: string };
 
 const CATEGORIES = ["cafe", "cosmetics", "interior", "food", "saas", "fashion", "other"];
-const DESIRED_PRESETS = ["조용한", "감성적인", "혼자 가기 좋은", "트렌디한", "친환경", "프리미엄", "합리적인", "혁신적"];
+
+// 어떤 카테고리에도 공통으로 추천되는 이미지
+const COMMON_PRESETS = ["트렌디한", "감성적인", "프리미엄", "합리적인", "친환경", "혁신적", "신뢰감 있는", "친근한"];
+
+// 카테고리별 맞춤 추천 이미지
+const CATEGORY_PRESETS: Record<string, string[]> = {
+  cafe: ["조용한", "혼자 가기 좋은", "디저트 맛집", "인스타 감성", "아늑한", "데이트 코스"],
+  cosmetics: ["순한", "고급스러운", "비건", "민감성 케어", "발색 좋은", "미니멀"],
+  interior: ["모던한", "내추럴", "공간 효율", "1인 가구", "따뜻한", "아늑한"],
+  food: ["건강한", "신선한", "정갈한", "푸짐한", "수제", "로컬"],
+  saas: ["직관적인", "빠른", "협업 친화", "안정적인", "자동화", "확장 가능한"],
+  fashion: ["유니크한", "데일리", "미니멀", "스트릿", "지속가능", "하이엔드"],
+  other: ["전문적인", "개성 있는", "대중적인", "고급스러운"],
+};
+
+function presetsFor(category: string): string[] {
+  const cat = CATEGORY_PRESETS[category] ?? [];
+  // 카테고리 맞춤 → 공통 순서로 합치고 중복 제거
+  return Array.from(new Set([...cat, ...COMMON_PRESETS]));
+}
 
 export function BrandWizard() {
   const router = useRouter();
@@ -157,6 +176,8 @@ function Step1Form({
   onNext: () => void;
 }) {
   const canNext = s1.brand_name.trim() && s1.category && s1.region.trim();
+  const presets = presetsFor(s1.category);
+  const [custom, setCustom] = useState("");
   function togglePreset(p: string) {
     setS1({
       ...s1,
@@ -164,6 +185,14 @@ function Step1Form({
         ? s1.desired_image.filter((x) => x !== p)
         : [...s1.desired_image, p],
     });
+  }
+  function addCustom(raw: string) {
+    const v = raw.trim();
+    if (!v || s1.desired_image.includes(v)) return;
+    setS1({ ...s1, desired_image: [...s1.desired_image, v] });
+  }
+  function removeImage(p: string) {
+    setS1({ ...s1, desired_image: s1.desired_image.filter((x) => x !== p) });
   }
   return (
     <div>
@@ -198,9 +227,16 @@ function Step1Form({
       </div>
 
       <div className="mt-4">
-        <label className="label">원하는 브랜드 이미지 <span className="text-ink-subtle">(여러 개 선택)</span></label>
+        <label className="label">
+          원하는 브랜드 이미지 <span className="text-ink-subtle">(여러 개 선택 · 직접 추가 가능)</span>
+        </label>
+        <p className="mb-2 text-xs text-ink-subtle">
+          {s1.category
+            ? `'${s1.category}' 카테고리에 맞춘 추천 이미지예요. 원하는 키워드를 직접 추가할 수도 있어요.`
+            : "카테고리를 선택하면 맞춤 추천 이미지가 표시됩니다."}
+        </p>
         <div className="flex flex-wrap gap-2">
-          {DESIRED_PRESETS.map((p) => {
+          {presets.map((p) => {
             const on = s1.desired_image.includes(p);
             return (
               <button
@@ -218,6 +254,57 @@ function Step1Form({
             );
           })}
         </div>
+
+        {/* 직접 추가 */}
+        <div className="mt-3 flex gap-2">
+          <input
+            className="input flex-1"
+            value={custom}
+            placeholder="원하는 이미지를 직접 입력 (예: 럭셔리한)"
+            onChange={(e) => setCustom(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                addCustom(custom);
+                setCustom("");
+              }
+            }}
+          />
+          <button
+            type="button"
+            className="btn-secondary shrink-0"
+            onClick={() => { addCustom(custom); setCustom(""); }}
+          >
+            + 추가
+          </button>
+        </div>
+
+        {/* 선택한 이미지 요약 */}
+        {s1.desired_image.length > 0 && (
+          <div className="mt-3 rounded-lg border border-canvas-border bg-canvas p-3">
+            <div className="mb-2 text-xs font-medium text-ink-subtle">
+              선택한 이미지 {s1.desired_image.length}개
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {s1.desired_image.map((p) => (
+                <span
+                  key={p}
+                  className="inline-flex items-center gap-1 rounded-full bg-ink px-3 py-1 text-sm text-white"
+                >
+                  {p}
+                  <button
+                    type="button"
+                    aria-label={`${p} 제거`}
+                    onClick={() => removeImage(p)}
+                    className="text-white/70 hover:text-white"
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="mt-10 flex justify-end">

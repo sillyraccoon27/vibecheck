@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { findUserByEmail, createUser } from "@/lib/db";
+import { findUserByEmail, createUser } from "@/lib/db/users";
 import { created, errors } from "@/lib/api-response";
 import { setSession } from "@/lib/auth";
 
@@ -16,11 +16,11 @@ export async function POST(req: NextRequest) {
   if (!email || !name || !password) {
     return errors.validation("이름, 이메일, 비밀번호는 필수입니다.");
   }
-  if (findUserByEmail(email)) {
+  if (await findUserByEmail(email)) {
     return errors.conflict("EMAIL_DUPLICATED", "이미 가입된 이메일입니다.");
   }
-  const user = createUser({ email, name, password_hash: password });
-  setSession(user.user_id);
+  const user = await createUser({ email, name, password_hash: password });
+  setSession({ user_id: user.user_id, email: user.email, name: user.name });
   return created({
     user_id: user.user_id,
     email: user.email,

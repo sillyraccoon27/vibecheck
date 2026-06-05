@@ -3,11 +3,14 @@
 import Link from "next/link";
 import { createPortal } from "react-dom";
 import { useEffect, useState } from "react";
+import { Modal } from "@/components/Modal";
+import { HelpContent } from "@/components/HelpContent";
 
 
 
 export function LandingMenu({ isLoggedIn = false }: { isLoggedIn?: boolean }) {
   const [open, setOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -79,20 +82,32 @@ export function LandingMenu({ isLoggedIn = false }: { isLoggedIn?: boolean }) {
 
               <div className="my-2 border-t border-canvas-border" />
 
-              <div className="flex flex-col gap-0.5 rounded-lg px-3 py-3 cursor-default">
+              <button
+                type="button"
+                onClick={() => { setOpen(false); setHelpOpen(true); }}
+                className="flex flex-col gap-0.5 rounded-lg px-3 py-3 text-left transition hover:bg-blue-50"
+              >
                 <span className="text-sm font-medium text-ink">소개 / 사용방법</span>
                 <span className="text-xs text-ink-subtle">Vibecheck이 어떻게 동작하는지</span>
-              </div>
-              <div className="flex flex-col gap-0.5 rounded-lg px-3 py-3 cursor-default">
+              </button>
+              <button
+                type="button"
+                onClick={() => { setOpen(false); setHelpOpen(true); }}
+                className="flex flex-col gap-0.5 rounded-lg px-3 py-3 text-left transition hover:bg-blue-50"
+              >
                 <span className="text-sm font-medium text-ink">도움말</span>
                 <span className="text-xs text-ink-subtle">FAQ · 문의하기</span>
-              </div>
+              </button>
             </nav>
 
           </aside>
         </div>,
         document.body
       )}
+
+      <Modal open={helpOpen} onClose={() => setHelpOpen(false)} title="소개 · 사용방법">
+        <HelpContent />
+      </Modal>
     </>
   );
 }
