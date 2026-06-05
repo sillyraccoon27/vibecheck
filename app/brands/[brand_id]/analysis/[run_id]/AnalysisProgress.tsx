@@ -27,19 +27,29 @@ export function AnalysisProgress({
 
   useEffect(() => {
     let alive = true;
+    let failCount = 0;
     async function poll() {
       try {
         const res = await fetch(`/api/analysis-runs/${run_id}`, { cache: "no-store" });
         const j = await res.json();
         if (!alive) return;
         if (j.ok) {
+          failCount = 0;
           setSnap(j.data);
           if (j.data.status === "succeeded") {
-            // 잠깐 100% 보여주고 대시보드로 이동
             setTimeout(() => router.push(`/brands/${brand_id}/dashboard/${run_id}`), 800);
+          } else if (j.data.status === "failed" || j.data.status === "cancelled") {
+            router.push(`/brands/${brand_id}`);
           }
+        } else {
+          failCount++;
+          // run을 찾지 못하면 브랜드 페이지로 복귀
+          if (failCount >= 3) router.push(`/brands/${brand_id}`);
         }
-      } catch {}
+      } catch {
+        failCount++;
+        if (failCount >= 3) router.push(`/brands/${brand_id}`);
+      }
     }
     poll();
     const id = setInterval(poll, 1500);
