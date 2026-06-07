@@ -2,6 +2,15 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { NaverMap, hasNaverMapKey, type MapMarker } from "@/components/NaverMap";
+import type { Place } from "@/app/api/places/search/route";
+import {
+  DEFAULT_REGION,
+  REGIONS,
+  REGION_STORAGE_KEY,
+  findRegion,
+  type Region,
+} from "@/lib/regions";
 
 type Store = {
   id: string;
@@ -18,6 +27,12 @@ type Store = {
   };
   total: number;
   status: "영업중" | "곧 영업종료" | "영업종료";
+  // Naver Local Search 실데이터일 때만 채워지는 필드
+  lat?: number;
+  lng?: number;
+  address?: string;
+  category?: string;
+  link?: string;
 };
 
 type Recommendation = {
@@ -28,38 +43,81 @@ type Recommendation = {
   reason: string;
 };
 
-// 데모 데이터 생성 — 실제로는 Naver Local Search + LLM 응답으로 대체된다.
-function mockStores(query: string): Store[] {
+// AI 평가 점수는 아직 데모(결정론적 의사난수) — LLM 연동 시 대체된다.
+function pseudoScores(seedText: string, rank: number) {
+  const seed = (seedText.length + rank * 7) % 13;
+  const base = 88 - rank * 4 - (seed % 3);
+  const jitter = (k: number) => Math.max(55, Math.min(98, base + ((seed * k) % 12) - 5));
+  const scores = {
+    atmosphere: jitter(2),
+    menu: jitter(3),
+    price: jitter(5) - 8,
+    service: jitter(7),
+    location: jitter(11) + 4,
+    cleanliness: jitter(13),
+  };
+  const total =
+    Math.round(
+      (scores.atmosphere * 0.2 +
+        scores.menu * 0.2 +
+        scores.price * 0.15 +
+        scores.service * 0.2 +
+        scores.location * 0.15 +
+        scores.cleanliness * 0.1) *
+        10
+    ) / 10;
+  return { seed, scores, total };
+}
+
+// 두 좌표 사이 거리(m) — 하버사인 공식
+function distanceM(a: { lat: number; lng: number }, b: { lat: number; lng: number }): number {
+  const R = 6371000;
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const dLat = toRad(b.lat - a.lat);
+  const dLng = toRad(b.lng - a.lng);
+  const h =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(a.lat)) * Math.cos(toRad(b.lat)) * Math.sin(dLng / 2) ** 2;
+  return Math.round(2 * R * Math.asin(Math.sqrt(h)));
+}
+
+// Naver Local Search 실데이터 → Store (평가 점수는 아직 데모)
+function storesFromPlaces(places: Place[], region: Region): Store[] {
+  return places.map((p, i) => {
+    const { scores, total } = pseudoScores(p.title, i);
+    // 매장명에서 브랜드/지점 분리 (첫 공백 기준, 예: "스타벅스 강남R점")
+    const sp = p.title.indexOf(" ");
+    const name = sp > 0 ? p.title.slice(0, sp) : p.title;
+    const branch = sp > 0 ? p.title.slice(sp + 1) : "";
+    return {
+      id: p.id,
+      name,
+      branch,
+      distance_m: distanceM(region, p),
+      scores,
+      total,
+      status: "영업중" as const,
+      lat: p.lat,
+      lng: p.lng,
+      address: p.road_address || p.address,
+      category: p.category.split(">").pop() ?? "",
+      link: p.link,
+    };
+  });
+}
+
+// 데모 데이터 생성 — 검색 API 키가 없을 때의 폴백.
+function mockStores(query: string, region: Region): Store[] {
   const brand = query || "스타벅스";
   const branches = [
-    "강남대로점",
-    "역삼역점",
-    "선릉역점",
-    "강남파이낸스점",
-    "교보타워점",
+    `${region.short}역점`,
+    `${region.short}중앙로점`,
+    `${region.short}사거리점`,
+    `${region.short}타워점`,
+    `${region.short}1호점`,
   ];
   return branches.map((b, i) => {
-    const seed = (brand.length + i * 7) % 13;
-    const base = 88 - i * 4 - (seed % 3);
-    const jitter = (k: number) => Math.max(55, Math.min(98, base + ((seed * k) % 12) - 5));
-    const scores = {
-      atmosphere: jitter(2),
-      menu: jitter(3),
-      price: jitter(5) - 8,
-      service: jitter(7),
-      location: jitter(11) + 4,
-      cleanliness: jitter(13),
-    };
-    const total =
-      Math.round(
-        (scores.atmosphere * 0.2 +
-          scores.menu * 0.2 +
-          scores.price * 0.15 +
-          scores.service * 0.2 +
-          scores.location * 0.15 +
-          scores.cleanliness * 0.1) *
-          10
-      ) / 10;
+    const { seed, scores, total } = pseudoScores(brand + region.short, i);
     return {
       id: `s${i}`,
       name: brand,
@@ -161,25 +219,46 @@ const SCORE_LABELS: Record<keyof Store["scores"], string> = {
 export function SearchClient({ query }: { query: string }) {
   const router = useRouter();
   const [q, setQ] = useState(query);
-  const [loc, setLoc] = useState<{ lat: number; lng: number } | null>(null);
-  const [locLabel, setLocLabel] = useState<string>("위치 확인 중...");
 
+  // 사용자가 직접 설정한 기준 지역 — localStorage에 저장되어 유지된다.
+  const [region, setRegion] = useState<Region>(DEFAULT_REGION);
   useEffect(() => {
-    if (!("geolocation" in navigator)) {
-      setLocLabel("위치 권한을 사용할 수 없습니다 (강남 기준 표시)");
-      return;
-    }
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        setLoc({ lat: pos.coords.latitude, lng: pos.coords.longitude });
-        setLocLabel(`내 위치 (${pos.coords.latitude.toFixed(4)}, ${pos.coords.longitude.toFixed(4)})`);
-      },
-      () => setLocLabel("위치 권한 거절됨 — 강남 기준으로 표시"),
-      { timeout: 4000 }
-    );
+    setRegion(findRegion(localStorage.getItem(REGION_STORAGE_KEY)));
   }, []);
 
-  const stores = useMemo(() => mockStores(query), [query]);
+  function changeRegion(id: string) {
+    const r = findRegion(id);
+    setRegion(r);
+    localStorage.setItem(REGION_STORAGE_KEY, r.id);
+  }
+
+  // Naver Local Search 실데이터 — 키가 없거나 결과가 없으면 null 유지(데모 폴백)
+  const [livePlaces, setLivePlaces] = useState<Place[] | null>(null);
+  useEffect(() => {
+    if (!query) return;
+    let cancelled = false;
+    const url = `/api/places/search?query=${encodeURIComponent(query)}&region=${encodeURIComponent(region.short)}`;
+    fetch(url)
+      .then((r) => r.json())
+      .then((body) => {
+        if (cancelled) return;
+        const places: Place[] =
+          body?.ok && body.data?.source === "naver" ? body.data.places : [];
+        setLivePlaces(places.length > 0 ? places : null);
+      })
+      .catch(() => {
+        if (!cancelled) setLivePlaces(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [query, region]);
+
+  const isLive = livePlaces !== null;
+  const stores = useMemo(
+    () => (livePlaces ? storesFromPlaces(livePlaces, region) : mockStores(query, region)),
+    [livePlaces, query, region]
+  );
   const recs = useMemo(() => mockRecommendations(query), [query]);
   const [selectedId, setSelectedId] = useState<string>(stores[0]?.id ?? "");
   const selected = stores.find((s) => s.id === selectedId) ?? stores[0];
@@ -187,11 +266,53 @@ export function SearchClient({ query }: { query: string }) {
   const sorted = [...stores].sort((a, b) => b.total - a.total);
   const selectedRank = sorted.findIndex((s) => s.id === selected?.id) + 1;
 
+  // 매장 마커 좌표 — 실데이터면 실제 좌표, 데모면 기준 지역 주변에 결정론적으로 배치
+  const markers = useMemo<MapMarker[]>(() => {
+    const angles = [40, 110, 180, 250, 320];
+    return stores.map((s, i) => {
+      let lat = s.lat;
+      let lng = s.lng;
+      if (lat == null || lng == null) {
+        const a = (angles[i % angles.length] * Math.PI) / 180;
+        lat = region.lat + (Math.sin(a) * s.distance_m) / 111320;
+        lng =
+          region.lng +
+          (Math.cos(a) * s.distance_m) /
+            (111320 * Math.cos((region.lat * Math.PI) / 180));
+      }
+      return {
+        id: s.id,
+        lat,
+        lng,
+        label: String(i + 1),
+        selected: s.id === selected?.id,
+      };
+    });
+  }, [stores, region, selected?.id]);
+
   function submit(value: string) {
     const v = value.trim();
     if (!v) return;
     router.push(`/search?q=${encodeURIComponent(v)}`);
   }
+
+  const regionSelector = (
+    <label className="inline-flex items-center gap-2 rounded-full border border-canvas-border bg-white px-3 py-1.5 text-xs text-ink-muted shadow-card">
+      <span>📍</span>
+      <span className="font-medium text-ink">기준 지역</span>
+      <select
+        value={region.id}
+        onChange={(e) => changeRegion(e.target.value)}
+        className="cursor-pointer bg-transparent text-xs font-semibold text-ink focus:outline-none"
+      >
+        {REGIONS.map((r) => (
+          <option key={r.id} value={r.id}>
+            {r.label}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
 
   if (!query) {
     return (
@@ -215,6 +336,12 @@ export function SearchClient({ query }: { query: string }) {
             검색
           </button>
         </form>
+        <div className="mt-4 flex flex-col items-center gap-2">
+          {regionSelector}
+          <p className="text-xs text-ink-subtle">
+            설정한 지역 주변의 매장을 검색합니다
+          </p>
+        </div>
       </section>
     );
   }
@@ -237,59 +364,74 @@ export function SearchClient({ query }: { query: string }) {
           다시 검색
         </button>
       </form>
-      <p className="mb-8 inline-flex items-center gap-2 rounded-full border border-canvas-border bg-white px-3 py-1 text-xs text-ink-muted">
-        <span>📍</span>
-        {locLabel}
-      </p>
-
-      <div className="rounded-md border border-warning/40 bg-warning/5 px-4 py-2.5 text-xs text-warning mb-8">
-        ⚠ 데모 데이터입니다. 실제 매장 검색·평가는 Naver Local Search + LLM API 키 연결 후 활성화됩니다.
+      <div className="mb-8 flex flex-wrap items-center gap-2">
+        {regionSelector}
+        <span className="text-xs text-ink-subtle">
+          설정한 지역 주변으로 검색 결과를 보여드립니다
+        </span>
       </div>
+
+      {isLive ? (
+        <div className="rounded-md border border-success/40 bg-success/5 px-4 py-2.5 text-xs text-success mb-8">
+          ✓ 매장 정보는 네이버 검색 실데이터입니다. AI 평가 점수는 데모이며 LLM API 연결 후 활성화됩니다.
+        </div>
+      ) : (
+        <div className="rounded-md border border-warning/40 bg-warning/5 px-4 py-2.5 text-xs text-warning mb-8">
+          ⚠ 데모 데이터입니다. 실제 매장 검색·평가는 Naver Local Search + LLM API 키 연결 후 활성화됩니다.
+        </div>
+      )}
 
       <section className="grid grid-cols-1 gap-6 lg:grid-cols-[1.4fr_1fr] mb-10">
         <div className="card overflow-hidden">
           <div className="border-b border-canvas-border bg-canvas px-4 py-3 flex items-center justify-between">
             <div className="text-sm font-medium text-ink">
-              근처 <span className="text-ink-muted">"{query}"</span> 검색 결과 · {stores.length}건
+              {region.label} 주변 <span className="text-ink-muted">"{query}"</span> 검색 결과 · {stores.length}건
             </div>
-            <span className="chip">Naver Map · 연결 예정</span>
+            <span className="chip">{hasNaverMapKey ? "Naver Map" : "Naver Map · 키 설정 필요"}</span>
           </div>
-          <div
-            className="relative h-[360px] bg-canvas"
-            style={{
-              backgroundImage:
-                "linear-gradient(to right, rgba(15,23,42,0.06) 1px, transparent 1px), linear-gradient(to bottom, rgba(15,23,42,0.06) 1px, transparent 1px)",
-              backgroundSize: "32px 32px",
-            }}
-          >
-            <div className="absolute left-1/2 top-1/2 h-6 w-6 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-success shadow-pop" />
-            <div className="absolute left-1/2 top-1/2 h-16 w-16 -translate-x-1/2 -translate-y-1/2 rounded-full border border-success/40 bg-success/10" />
-            {stores.map((s, i) => {
-              const angles = [40, 110, 180, 250, 320];
-              const r = 90 + i * 14;
-              const a = (angles[i] * Math.PI) / 180;
-              const x = 50 + (Math.cos(a) * r) / 6;
-              const y = 50 + (Math.sin(a) * r) / 6;
-              return (
-                <button
-                  key={s.id}
-                  type="button"
-                  onClick={() => setSelectedId(s.id)}
-                  className={`absolute -translate-x-1/2 -translate-y-1/2 rounded-full border-2 px-2 py-0.5 text-[10px] font-semibold shadow-card transition ${
-                    s.id === selected?.id
-                      ? "border-ink bg-ink text-white"
-                      : "border-white bg-white text-ink"
-                  }`}
-                  style={{ left: `${x}%`, top: `${y}%` }}
-                >
-                  {i + 1}
-                </button>
-              );
-            })}
-            <div className="absolute bottom-3 left-3 text-[10px] text-ink-subtle">
-              📍 현재 위치 · 반경 ~1km
-            </div>
-          </div>
+          <NaverMap
+            center={{ lat: region.lat, lng: region.lng }}
+            markers={markers}
+            onSelect={setSelectedId}
+            fallback={
+              <div
+                className="relative h-[360px] bg-canvas"
+                style={{
+                  backgroundImage:
+                    "linear-gradient(to right, rgba(15,23,42,0.06) 1px, transparent 1px), linear-gradient(to bottom, rgba(15,23,42,0.06) 1px, transparent 1px)",
+                  backgroundSize: "32px 32px",
+                }}
+              >
+                <div className="absolute left-1/2 top-1/2 h-6 w-6 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-success shadow-pop" />
+                <div className="absolute left-1/2 top-1/2 h-16 w-16 -translate-x-1/2 -translate-y-1/2 rounded-full border border-success/40 bg-success/10" />
+                {stores.map((s, i) => {
+                  const angles = [40, 110, 180, 250, 320];
+                  const r = 90 + i * 14;
+                  const a = (angles[i] * Math.PI) / 180;
+                  const x = 50 + (Math.cos(a) * r) / 6;
+                  const y = 50 + (Math.sin(a) * r) / 6;
+                  return (
+                    <button
+                      key={s.id}
+                      type="button"
+                      onClick={() => setSelectedId(s.id)}
+                      className={`absolute -translate-x-1/2 -translate-y-1/2 rounded-full border-2 px-2 py-0.5 text-[10px] font-semibold shadow-card transition ${
+                        s.id === selected?.id
+                          ? "border-ink bg-ink text-white"
+                          : "border-white bg-white text-ink"
+                      }`}
+                      style={{ left: `${x}%`, top: `${y}%` }}
+                    >
+                      {i + 1}
+                    </button>
+                  );
+                })}
+                <div className="absolute bottom-3 left-3 text-[10px] text-ink-subtle">
+                  📍 {region.label} 기준 · 반경 ~1km
+                </div>
+              </div>
+            }
+          />
         </div>
 
         <div className="flex flex-col gap-2">
@@ -321,10 +463,17 @@ export function SearchClient({ query }: { query: string }) {
                   <div className="mt-1 flex items-center gap-2 text-[11px] text-ink-subtle">
                     <span>{s.distance_m}m</span>
                     <span>·</span>
-                    <span className={s.status === "영업중" ? "text-success" : "text-warning"}>
-                      ● {s.status}
-                    </span>
+                    {s.category ? (
+                      <span>{s.category}</span>
+                    ) : (
+                      <span className={s.status === "영업중" ? "text-success" : "text-warning"}>
+                        ● {s.status}
+                      </span>
+                    )}
                   </div>
+                  {s.address && (
+                    <div className="mt-0.5 truncate text-[11px] text-ink-subtle">{s.address}</div>
+                  )}
                 </div>
               </button>
             );
@@ -340,6 +489,24 @@ export function SearchClient({ query }: { query: string }) {
           <h2 className="text-2xl font-bold text-ink">
             {selected.name} <span className="text-ink-muted">{selected.branch}</span>
           </h2>
+          {selected.address && (
+            <p className="mt-1 text-xs text-ink-subtle">
+              {selected.address}
+              {selected.link && (
+                <>
+                  {" · "}
+                  <a
+                    href={selected.link}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="underline hover:text-ink"
+                  >
+                    홈페이지
+                  </a>
+                </>
+              )}
+            </p>
+          )}
           <div className="mt-1 flex items-center gap-3 text-sm text-ink-muted">
             <span>총점</span>
             <span className="text-2xl font-bold text-ink">{selected.total}</span>
