@@ -5,10 +5,13 @@ import { useRouter } from "next/navigation";
 import { NaverMap, hasNaverMapKey, type MapMarker } from "@/components/NaverMap";
 import type { Place } from "@/app/api/places/search/route";
 import {
+  CUSTOM_REGION_ID,
   DEFAULT_REGION,
   REGIONS,
   REGION_STORAGE_KEY,
   findRegion,
+  loadRegion,
+  serializeRegion,
   type Region,
 } from "@/lib/regions";
 
@@ -223,13 +226,47 @@ export function SearchClient({ query }: { query: string }) {
   // 사용자가 직접 설정한 기준 지역 — localStorage에 저장되어 유지된다.
   const [region, setRegion] = useState<Region>(DEFAULT_REGION);
   useEffect(() => {
-    setRegion(findRegion(localStorage.getItem(REGION_STORAGE_KEY)));
+    setRegion(loadRegion(localStorage.getItem(REGION_STORAGE_KEY)));
   }, []);
 
   function changeRegion(id: string) {
     const r = findRegion(id);
     setRegion(r);
-    localStorage.setItem(REGION_STORAGE_KEY, r.id);
+    localStorage.setItem(REGION_STORAGE_KEY, serializeRegion(r));
+    setCustomOpen(false);
+    setCustomStatus("idle");
+  }
+
+  // 직접 입력 지역 — 지역명을 Local Search로 조회해 좌표를 얻는다.
+  const [customOpen, setCustomOpen] = useState(false);
+  const [customText, setCustomText] = useState("");
+  const [customStatus, setCustomStatus] = useState<"idle" | "loading" | "error">("idle");
+
+  async function applyCustomRegion() {
+    const label = customText.trim();
+    if (!label || customStatus === "loading") return;
+    setCustomStatus("loading");
+    try {
+      const res = await fetch(`/api/places/search?query=${encodeURIComponent(label)}`);
+      const body = await res.json();
+      const places: Place[] =
+        body?.ok && body.data?.source === "naver" ? body.data.places : [];
+      if (places.length === 0) {
+        setCustomStatus("error");
+        return;
+      }
+      // 검색 결과 좌표의 평균을 지역 중심으로 사용
+      const lat = places.reduce((s, p) => s + p.lat, 0) / places.length;
+      const lng = places.reduce((s, p) => s + p.lng, 0) / places.length;
+      const r: Region = { id: CUSTOM_REGION_ID, label, short: label, lat, lng };
+      setRegion(r);
+      localStorage.setItem(REGION_STORAGE_KEY, serializeRegion(r));
+      setCustomOpen(false);
+      setCustomText("");
+      setCustomStatus("idle");
+    } catch {
+      setCustomStatus("error");
+    }
   }
 
   // Naver Local Search 실데이터 — 키가 없거나 결과가 없으면 null 유지(데모 폴백)
@@ -297,21 +334,68 @@ export function SearchClient({ query }: { query: string }) {
   }
 
   const regionSelector = (
-    <label className="inline-flex items-center gap-2 rounded-full border border-canvas-border bg-white px-3 py-1.5 text-xs text-ink-muted shadow-card">
-      <span>📍</span>
-      <span className="font-medium text-ink">기준 지역</span>
-      <select
-        value={region.id}
-        onChange={(e) => changeRegion(e.target.value)}
-        className="cursor-pointer bg-transparent text-xs font-semibold text-ink focus:outline-none"
+    <div className="flex flex-wrap items-center gap-2">
+      <label className="inline-flex items-center gap-2 rounded-full border border-canvas-border bg-white px-3 py-1.5 text-xs text-ink-muted shadow-card">
+        <span>📍</span>
+        <span className="font-medium text-ink">기준 지역</span>
+        <select
+          value={region.id}
+          onChange={(e) => changeRegion(e.target.value)}
+          className="cursor-pointer bg-transparent text-xs font-semibold text-ink focus:outline-none"
+        >
+          {region.id === CUSTOM_REGION_ID && (
+            <option value={CUSTOM_REGION_ID}>{region.label}</option>
+          )}
+          {REGIONS.map((r) => (
+            <option key={r.id} value={r.id}>
+              {r.label}
+            </option>
+          ))}
+        </select>
+      </label>
+      <button
+        type="button"
+        onClick={() => {
+          setCustomOpen((v) => !v);
+          setCustomStatus("idle");
+        }}
+        className="rounded-full border border-canvas-border bg-white px-3 py-1.5 text-xs font-medium text-ink-muted shadow-card transition hover:border-ink hover:text-ink"
       >
-        {REGIONS.map((r) => (
-          <option key={r.id} value={r.id}>
-            {r.label}
-          </option>
-        ))}
-      </select>
-    </label>
+        직접 입력
+      </button>
+      {customOpen && (
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            applyCustomRegion();
+          }}
+          className="inline-flex items-center gap-2 rounded-full border border-canvas-border bg-white px-3 py-1 text-xs shadow-card focus-within:border-ink"
+        >
+          <input
+            autoFocus
+            value={customText}
+            onChange={(e) => {
+              setCustomText(e.target.value);
+              setCustomStatus("idle");
+            }}
+            placeholder="동/역/지역명 (예: 안암동, 판교역)"
+            className="w-44 bg-transparent py-0.5 focus:outline-none"
+          />
+          <button
+            type="submit"
+            disabled={customStatus === "loading"}
+            className="shrink-0 rounded-full bg-ink px-2.5 py-1 text-[11px] font-semibold text-white disabled:opacity-50"
+          >
+            {customStatus === "loading" ? "찾는 중…" : "설정"}
+          </button>
+        </form>
+      )}
+      {customOpen && customStatus === "error" && (
+        <span className="text-xs text-warning">
+          지역을 찾지 못했어요. 다른 이름으로 시도해 보세요.
+        </span>
+      )}
+    </div>
   );
 
   if (!query) {

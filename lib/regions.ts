@@ -32,6 +32,48 @@ export const DEFAULT_REGION = REGIONS[0];
 
 export const REGION_STORAGE_KEY = "vibecheck.region";
 
+// 사용자가 직접 입력한 지역의 id — 프리셋이 아닌 커스텀 지역을 구분한다.
+export const CUSTOM_REGION_ID = "custom";
+
 export function findRegion(id: string | null | undefined): Region {
   return REGIONS.find((r) => r.id === id) ?? DEFAULT_REGION;
+}
+
+// localStorage 저장값 복원 — 프리셋은 id 문자열, 커스텀 지역은 JSON으로 저장된다.
+export function loadRegion(raw: string | null): Region {
+  if (!raw) return DEFAULT_REGION;
+  if (raw.startsWith("{")) {
+    try {
+      const r = JSON.parse(raw);
+      if (
+        typeof r.label === "string" &&
+        r.label.length > 0 &&
+        Number.isFinite(r.lat) &&
+        Number.isFinite(r.lng)
+      ) {
+        return {
+          id: CUSTOM_REGION_ID,
+          label: r.label,
+          short: typeof r.short === "string" && r.short ? r.short : r.label,
+          lat: r.lat,
+          lng: r.lng,
+        };
+      }
+    } catch {
+      // 손상된 값은 무시하고 기본 지역으로
+    }
+    return DEFAULT_REGION;
+  }
+  return findRegion(raw);
+}
+
+export function serializeRegion(region: Region): string {
+  return region.id === CUSTOM_REGION_ID
+    ? JSON.stringify({
+        label: region.label,
+        short: region.short,
+        lat: region.lat,
+        lng: region.lng,
+      })
+    : region.id;
 }
