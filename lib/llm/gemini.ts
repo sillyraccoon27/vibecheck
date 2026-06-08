@@ -62,6 +62,28 @@ function totalFrom(scores: Record<ScoreKey, number>): number {
   return Math.round(t * 10) / 10;
 }
 
+// 503(과부하)·429(레이트리밋) 등 일시적 오류는 짧게 재시도한다.
+async function generateWithRetry(
+  ai: GoogleGenAI,
+  params: Parameters<GoogleGenAI["models"]["generateContent"]>[0],
+  attempts = 3
+): Promise<Awaited<ReturnType<GoogleGenAI["models"]["generateContent"]>>> {
+  let lastErr: unknown;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await ai.models.generateContent(params);
+    } catch (e) {
+      lastErr = e;
+      const msg = String(e);
+      const transient = /\b(429|500|503|UNAVAILABLE|overloaded|high demand)\b/i.test(msg);
+      if (!transient || i === attempts - 1) throw e;
+      // 0.6s, 1.2s 백오프
+      await new Promise((r) => setTimeout(r, 600 * (i + 1)));
+    }
+  }
+  throw lastErr;
+}
+
 // 매장 목록을 한 번의 호출로 평가한다(점수 6종 + 평가 코멘트).
 export async function evaluateStores(
   query: string,
@@ -91,11 +113,15 @@ ${list}
 - 실제로 알 수 없는 매장이면 분류·입지·일반적 평판을 바탕으로 합리적으로 추정하세요.`;
 
   const ai = getClient();
-  const res = await ai.models.generateContent({
+  const res = await generateWithRetry(ai, {
     model: MODEL,
     contents: prompt,
     config: {
       responseMimeType: "application/json",
+      // thinking 비활성화 — 구조화 JSON 출력에선 불필요하고, 켜두면 출력 예산을
+      // 잡아먹어 응답이 잘리거나 느려진다(11~14초 → 2~4초).
+      thinkingConfig: { thinkingBudget: 0 },
+      maxOutputTokens: 4096,
       responseSchema: {
         type: Type.ARRAY,
         items: {
