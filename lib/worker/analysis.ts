@@ -1,74 +1,67 @@
-// AI 분석 worker stub.
-// 실제로는 Inngest/QStash가 호출하지만, MVP에서는 in-process setInterval로 진행률을 시뮬레이션한다.
+// AI 분석 worker.
+// 서버리스(Vercel)에서는 응답 반환 후 인스턴스가 정지되어 setInterval/백그라운드
+// 타이머가 멈춘다. 그래서 타이머로 진행률을 올리지 않고, 폴링(GET)이 들어올 때마다
+// started_at 이후 경과 시간을 기준으로 진행률을 전진시키는 방식으로 동작한다.
 
 import { findRun, updateRun, findBrand, listCompetitors } from "../db";
-
-// run_id → timer 참조 (중복 시작 방지)
-const timers = new Map<string, NodeJS.Timeout>();
+import type { AnalysisRun } from "../types";
 
 const STEP_THRESHOLDS = [0, 0.05, 0.1, 0.75, 0.85, 0.95, 1.0];
 
-export function startAnalysisWorker(run_id: string) {
-  if (timers.has(run_id)) return;
-
-  const tick = () => {
-    const run = findRun(run_id);
-    if (!run) {
-      stopAnalysisWorker(run_id);
-      return;
-    }
-    if (run.status === "cancelled" || run.status === "failed" || run.status === "succeeded") {
-      stopAnalysisWorker(run_id);
-      return;
-    }
-
-    if (run.status === "pending") {
-      updateRun(run_id, { status: "running" });
-    }
-
-    // 한 틱마다 expected_responses의 ~3%씩 응답을 모았다고 가정.
-    const inc = Math.max(20, Math.floor(run.expected_responses * 0.03));
-    const next = Math.min(run.expected_responses, run.total_responses_collected + inc);
-    const percent = next / run.expected_responses;
-
-    // step 진행
-    let current_step = run.current_step;
-    for (let i = STEP_THRESHOLDS.length - 1; i >= 0; i--) {
-      if (percent >= STEP_THRESHOLDS[i]) {
-        current_step = i;
-        break;
-      }
-    }
-
-    if (next >= run.expected_responses) {
-      const scored = computeMockScores(run.brand_id);
-      updateRun(run_id, {
-        total_responses_collected: next,
-        current_step: 6,
-        ...scored,
-        status: "succeeded",
-        completed_at: new Date().toISOString(),
-      });
-      stopAnalysisWorker(run_id);
-    } else {
-      updateRun(run_id, {
-        total_responses_collected: next,
-        current_step,
-      });
-    }
-  };
-
-  // 1.5초마다 진행 — 1500 응답 기준 약 1.5분 시뮬레이션
-  const t = setInterval(tick, 1500);
-  timers.set(run_id, t);
+// 시뮬레이션 총 소요 시간(ms). expected_responses에 비례하되 6~20초로 제한.
+function simDurationMs(expected: number): number {
+  return Math.min(20000, Math.max(6000, expected * 8));
 }
 
-export function stopAnalysisWorker(run_id: string) {
-  const t = timers.get(run_id);
-  if (t) {
-    clearInterval(t);
-    timers.delete(run_id);
+// 분석 시작 — 별도 타이머를 쓰지 않는다(진행은 advanceRun이 폴링 시 처리).
+// 시그니처는 호출부 호환을 위해 유지.
+export function startAnalysisWorker(_run_id: string) {
+  /* no-op: 진행률은 advanceRun()이 폴링 시점에 계산한다 */
+}
+
+// 취소 시 호출되던 함수 — 타이머가 없으므로 no-op (호출부 호환 유지).
+export function stopAnalysisWorker(_run_id: string) {
+  /* no-op */
+}
+
+// 경과 시간 기준으로 run의 진행률을 전진시키고, 완료 시 점수를 계산한다.
+// GET 핸들러에서 응답을 만들기 전에 호출한다.
+export function advanceRun(run_id: string): AnalysisRun | null {
+  const run = findRun(run_id);
+  if (!run) return null;
+  if (run.status === "succeeded" || run.status === "failed" || run.status === "cancelled") {
+    return run;
   }
+
+  const startedMs = new Date(run.started_at).getTime();
+  const duration = simDurationMs(run.expected_responses);
+  const elapsed = Number.isFinite(startedMs) ? Date.now() - startedMs : duration;
+  const percent = Math.max(0, Math.min(1, elapsed / duration));
+
+  if (percent >= 1) {
+    const scored = computeMockScores(run.brand_id);
+    return updateRun(run_id, {
+      total_responses_collected: run.expected_responses,
+      current_step: 6,
+      ...scored,
+      status: "succeeded",
+      completed_at: new Date().toISOString(),
+    });
+  }
+
+  let current_step = 0;
+  for (let i = STEP_THRESHOLDS.length - 1; i >= 0; i--) {
+    if (percent >= STEP_THRESHOLDS[i]) {
+      current_step = i;
+      break;
+    }
+  }
+
+  return updateRun(run_id, {
+    status: "running",
+    total_responses_collected: Math.floor(percent * run.expected_responses),
+    current_step,
+  });
 }
 
 function computeMockScores(brand_id: string) {

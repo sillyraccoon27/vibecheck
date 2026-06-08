@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
-import { findBrand, findRun, listCompetitors } from "@/lib/db";
+import { findBrand, listCompetitors } from "@/lib/db";
+import { advanceRun } from "@/lib/worker/analysis";
 import { errors, ok } from "@/lib/api-response";
 
 export async function GET(
@@ -10,7 +11,8 @@ export async function GET(
   const user = getCurrentUser();
   if (!user) return errors.unauthorized();
 
-  const run = findRun(params.run_id);
+  // 대시보드 직접 진입 시에도 진행률을 전진시켜 완료 상태를 보장한다.
+  const run = advanceRun(params.run_id);
   if (!run) return errors.notFound("RUN_NOT_FOUND", "해당 분석을 찾을 수 없습니다.");
   const brand = findBrand(run.brand_id);
   if (!brand || brand.user_id !== user.user_id) return errors.forbidden();

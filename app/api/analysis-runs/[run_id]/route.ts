@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
-import { findBrand, findRun } from "@/lib/db";
+import { findBrand } from "@/lib/db";
+import { advanceRun } from "@/lib/worker/analysis";
 import { errors, ok } from "@/lib/api-response";
 
 export async function GET(
@@ -10,7 +11,8 @@ export async function GET(
   const user = getCurrentUser();
   if (!user) return errors.unauthorized();
 
-  const run = findRun(params.run_id);
+  // 폴링 시점에 경과 시간 기준으로 진행률을 전진시킨다(서버리스에서 타이머 대체).
+  const run = advanceRun(params.run_id);
   if (!run) return errors.notFound("RUN_NOT_FOUND", "해당 분석을 찾을 수 없습니다.");
   const brand = findBrand(run.brand_id);
   if (!brand || brand.user_id !== user.user_id) return errors.forbidden();
