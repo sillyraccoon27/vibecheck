@@ -28,6 +28,48 @@ function cleanTitle(raw: string): string {
     .trim();
 }
 
+// 같은 매장의 부속 POI(주차장·입구·옥외 등)를 나타내는 접미사 — 대표 항목 선정에 사용
+const SUB_POI = /(주차장|주차|발렛|입구|출입구|정문|후문|옥외|앞|광장|타워|스퀘어)\s*$|_/;
+
+// 매장명에서 브랜드(첫 공백 앞)를 추출해 묶음 키로 쓴다.
+function brandKey(title: string): string {
+  const sp = title.indexOf(" ");
+  return (sp > 0 ? title.slice(0, sp) : title).replace(/\s+/g, "");
+}
+
+// 두 좌표 사이 거리(m) — 하버사인
+function distM(a: { lat: number; lng: number }, b: { lat: number; lng: number }): number {
+  const R = 6371000;
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const dLat = toRad(b.lat - a.lat);
+  const dLng = toRad(b.lng - a.lng);
+  const h =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(a.lat)) * Math.cos(toRad(b.lat)) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+
+// 같은 브랜드 + 매우 가까운 좌표(≈60m)면 같은 매장의 중복 POI로 보고 대표 1개만 남긴다.
+function dedupePlaces(places: Place[]): Place[] {
+  const DUP_RADIUS_M = 60;
+  const kept: Place[] = [];
+  for (const p of places) {
+    const dupIdx = kept.findIndex(
+      (k) => brandKey(k.title) === brandKey(p.title) && distM(k, p) < DUP_RADIUS_M
+    );
+    if (dupIdx === -1) {
+      kept.push(p);
+      continue;
+    }
+    // 이미 같은 매장이 있으면, 부속 POI 같은 이름(주차장/입구 등)이 아닌 쪽을 대표로 유지
+    const existing = kept[dupIdx];
+    if (SUB_POI.test(existing.title) && !SUB_POI.test(p.title)) {
+      kept[dupIdx] = p;
+    }
+  }
+  return kept;
+}
+
 export async function GET(req: NextRequest) {
   const query = req.nextUrl.searchParams.get("query")?.trim() ?? "";
   const region = req.nextUrl.searchParams.get("region")?.trim() ?? "";
@@ -89,5 +131,5 @@ export async function GET(req: NextRequest) {
     }))
     .filter((p) => Number.isFinite(p.lat) && Number.isFinite(p.lng) && p.lat !== 0);
 
-  return ok({ source: "naver" as const, places });
+  return ok({ source: "naver" as const, places: dedupePlaces(places) });
 }
