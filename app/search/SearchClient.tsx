@@ -38,6 +38,14 @@ type Store = {
   link?: string;
 };
 
+// Gemini 평가 결과 (서버 /api/places/evaluate 응답 항목)
+type StoreEval = {
+  id: string;
+  scores: Store["scores"];
+  total: number;
+  details: string[];
+};
+
 type Recommendation = {
   id: string;
   name: string;
@@ -292,14 +300,79 @@ export function SearchClient({ query }: { query: string }) {
   }, [query, region]);
 
   const isLive = livePlaces !== null;
-  const stores = useMemo(
+  const baseStores = useMemo(
     () => (livePlaces ? storesFromPlaces(livePlaces, region) : mockStores(query, region)),
     [livePlaces, query, region]
   );
+
+  // Gemini 평가 결과 (id → 평가). 키가 없거나 실패하면 비어 있어 데모 점수로 폴백한다.
+  const [evals, setEvals] = useState<Record<string, StoreEval>>({});
+  const [aiEvaluated, setAiEvaluated] = useState(false);
+  useEffect(() => {
+    if (baseStores.length === 0) {
+      setEvals({});
+      setAiEvaluated(false);
+      return;
+    }
+    let cancelled = false;
+    const payload = {
+      query,
+      stores: baseStores.map((s) => ({
+        id: s.id,
+        name: s.name,
+        branch: s.branch,
+        address: s.address ?? "",
+        category: s.category ?? "",
+      })),
+    };
+    fetch("/api/places/evaluate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    })
+      .then((r) => r.json())
+      .then((body) => {
+        if (cancelled) return;
+        if (body?.ok && body.data?.source === "gemini") {
+          const map: Record<string, StoreEval> = {};
+          for (const e of body.data.evaluations as StoreEval[]) map[e.id] = e;
+          setEvals(map);
+          setAiEvaluated(true);
+        } else {
+          setEvals({});
+          setAiEvaluated(false);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setEvals({});
+          setAiEvaluated(false);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [baseStores, query]);
+
+  // 실데이터 평가가 있으면 점수/총점을 덮어쓰고, 없으면 데모 점수를 그대로 둔다.
+  const stores = useMemo(
+    () =>
+      baseStores.map((s) => {
+        const e = evals[s.id];
+        return e ? { ...s, scores: e.scores, total: e.total } : s;
+      }),
+    [baseStores, evals]
+  );
+
   const recs = useMemo(() => mockRecommendations(query), [query]);
   const [selectedId, setSelectedId] = useState<string>(stores[0]?.id ?? "");
   const selected = stores.find((s) => s.id === selectedId) ?? stores[0];
-  const evalLines = useMemo(() => (selected ? mockEvaluation(query, selected) : []), [query, selected]);
+  const evalLines = useMemo(() => {
+    if (!selected) return [];
+    const e = evals[selected.id];
+    if (e && e.details.length > 0) return e.details;
+    return mockEvaluation(query, selected);
+  }, [query, selected, evals]);
   const sorted = [...stores].sort((a, b) => b.total - a.total);
   const selectedRank = sorted.findIndex((s) => s.id === selected?.id) + 1;
 
@@ -455,13 +528,17 @@ export function SearchClient({ query }: { query: string }) {
         </span>
       </div>
 
-      {isLive ? (
+      {aiEvaluated ? (
         <div className="rounded-md border border-success/40 bg-success/5 px-4 py-2.5 text-xs text-success mb-8">
-          ✓ 매장 정보는 네이버 검색 실데이터입니다. AI 평가 점수는 데모이며 LLM API 연결 후 활성화됩니다.
+          ✓ 매장 정보는 네이버 검색, AI 평가 점수는 Gemini 실데이터입니다.
+        </div>
+      ) : isLive ? (
+        <div className="rounded-md border border-success/40 bg-success/5 px-4 py-2.5 text-xs text-success mb-8">
+          ✓ 매장 정보는 네이버 검색 실데이터입니다. AI 평가 점수는 데모이며 Gemini API 연결 후 활성화됩니다.
         </div>
       ) : (
         <div className="rounded-md border border-warning/40 bg-warning/5 px-4 py-2.5 text-xs text-warning mb-8">
-          ⚠ 데모 데이터입니다. 실제 매장 검색·평가는 Naver Local Search + LLM API 키 연결 후 활성화됩니다.
+          ⚠ 데모 데이터입니다. 실제 매장 검색·평가는 Naver Local Search + Gemini API 키 연결 후 활성화됩니다.
         </div>
       )}
 
