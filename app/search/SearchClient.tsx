@@ -308,13 +308,16 @@ export function SearchClient({ query }: { query: string }) {
   // Gemini 평가 결과 (id → 평가). 키가 없거나 실패하면 비어 있어 데모 점수로 폴백한다.
   const [evals, setEvals] = useState<Record<string, StoreEval>>({});
   const [aiEvaluated, setAiEvaluated] = useState(false);
+  const [evalLoading, setEvalLoading] = useState(false);
   useEffect(() => {
     if (baseStores.length === 0) {
       setEvals({});
       setAiEvaluated(false);
+      setEvalLoading(false);
       return;
     }
     let cancelled = false;
+    setEvalLoading(true);
     const payload = {
       query,
       stores: baseStores.map((s) => ({
@@ -342,11 +345,13 @@ export function SearchClient({ query }: { query: string }) {
           setEvals({});
           setAiEvaluated(false);
         }
+        setEvalLoading(false);
       })
       .catch(() => {
         if (!cancelled) {
           setEvals({});
           setAiEvaluated(false);
+          setEvalLoading(false);
         }
       });
     return () => {
@@ -528,7 +533,12 @@ export function SearchClient({ query }: { query: string }) {
         </span>
       </div>
 
-      {aiEvaluated ? (
+      {evalLoading ? (
+        <div className="flex items-center gap-2 rounded-md border border-ink/15 bg-canvas px-4 py-2.5 text-xs text-ink-muted mb-8">
+          <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-ink/30 border-t-ink" />
+          AI(Gemini)가 매장을 평가하는 중입니다… 잠시 후 실제 점수로 갱신됩니다.
+        </div>
+      ) : aiEvaluated ? (
         <div className="rounded-md border border-success/40 bg-success/5 px-4 py-2.5 text-xs text-success mb-8">
           ✓ 매장 정보는 네이버 검색, AI 평가 점수는 Gemini 실데이터입니다.
         </div>
