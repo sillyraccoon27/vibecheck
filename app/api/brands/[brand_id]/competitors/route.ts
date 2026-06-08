@@ -9,10 +9,10 @@ export async function GET(
 ) {
   const user = getCurrentUser();
   if (!user) return errors.unauthorized();
-  const brand = findBrand(params.brand_id);
+  const brand = await findBrand(params.brand_id);
   if (!brand) return errors.notFound("BRAND_NOT_FOUND", "해당 브랜드를 찾을 수 없습니다.");
   if (brand.user_id !== user.user_id) return errors.forbidden();
-  const items = listCompetitors(brand.brand_id);
+  const items = await listCompetitors(brand.brand_id);
   return ok({
     items,
     pagination: { page: 1, limit: items.length, total: items.length, total_pages: 1 },
@@ -25,7 +25,7 @@ export async function POST(
 ) {
   const user = getCurrentUser();
   if (!user) return errors.unauthorized();
-  const brand = findBrand(params.brand_id);
+  const brand = await findBrand(params.brand_id);
   if (!brand) return errors.notFound("BRAND_NOT_FOUND", "해당 브랜드를 찾을 수 없습니다.");
   if (brand.user_id !== user.user_id) return errors.forbidden();
 
@@ -36,7 +36,7 @@ export async function POST(
     url?: string;
   };
   if (!body.competitor_name) return errors.validation("competitor_name은 필수입니다.");
-  const c = createCompetitor({
+  const c = await createCompetitor({
     brand_id: brand.brand_id,
     competitor_name: body.competitor_name,
     category: body.category ?? brand.category,

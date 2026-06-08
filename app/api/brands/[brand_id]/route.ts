@@ -16,15 +16,19 @@ export async function GET(
   const user = getCurrentUser();
   if (!user) return errors.unauthorized();
 
-  const brand = findBrand(params.brand_id);
+  const brand = await findBrand(params.brand_id);
   if (!brand) return errors.notFound("BRAND_NOT_FOUND", "해당 브랜드를 찾을 수 없습니다.");
   if (brand.user_id !== user.user_id) return errors.forbidden();
 
-  const latest = findLatestRunForBrand(brand.brand_id);
+  const [latest, links, competitors] = await Promise.all([
+    findLatestRunForBrand(brand.brand_id),
+    listBrandLinks(brand.brand_id),
+    listCompetitors(brand.brand_id),
+  ]);
   return ok({
     ...brand,
-    links: listBrandLinks(brand.brand_id),
-    competitors: listCompetitors(brand.brand_id),
+    links,
+    competitors,
     latest_run: latest
       ? {
           run_id: latest.run_id,
@@ -42,9 +46,9 @@ export async function DELETE(
 ) {
   const user = getCurrentUser();
   if (!user) return errors.unauthorized();
-  const brand = findBrand(params.brand_id);
+  const brand = await findBrand(params.brand_id);
   if (!brand) return errors.notFound("BRAND_NOT_FOUND", "해당 브랜드를 찾을 수 없습니다.");
   if (brand.user_id !== user.user_id) return errors.forbidden();
-  deleteBrand(brand.brand_id);
+  await deleteBrand(brand.brand_id);
   return noContent();
 }

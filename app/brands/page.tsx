@@ -7,7 +7,7 @@ import { listBrandsByUser, findLatestRunForBrand } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
-export default function BrandsPage({
+export default async function BrandsPage({
   searchParams,
 }: {
   searchParams: { tab?: string };
@@ -17,21 +17,23 @@ export default function BrandsPage({
 
   const activeTab = searchParams.tab ?? "all";
 
-  const brands = listBrandsByUser(user.user_id);
-  const items = brands.map((b) => {
-    const run = findLatestRunForBrand(b.brand_id);
-    return {
-      ...b,
-      latest_run: run
-        ? {
-            run_id: run.run_id,
-            status: run.status,
-            total_score: run.total_score,
-            completed_at: run.completed_at,
-          }
-        : null,
-    };
-  });
+  const brands = await listBrandsByUser(user.user_id);
+  const items = await Promise.all(
+    brands.map(async (b) => {
+      const run = await findLatestRunForBrand(b.brand_id);
+      return {
+        ...b,
+        latest_run: run
+          ? {
+              run_id: run.run_id,
+              status: run.status,
+              total_score: run.total_score,
+              completed_at: run.completed_at,
+            }
+          : null,
+      };
+    })
+  );
 
   const filtered =
     activeTab === "succeeded"

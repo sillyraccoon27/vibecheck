@@ -11,9 +11,9 @@ export async function POST(
   const user = getCurrentUser();
   if (!user) return errors.unauthorized();
 
-  const run = findRun(params.run_id);
+  const run = await findRun(params.run_id);
   if (!run) return errors.notFound("RUN_NOT_FOUND", "해당 분석을 찾을 수 없습니다.");
-  const brand = findBrand(run.brand_id);
+  const brand = await findBrand(run.brand_id);
   if (!brand || brand.user_id !== user.user_id) return errors.forbidden();
 
   if (run.status !== "pending" && run.status !== "running") {
@@ -21,7 +21,7 @@ export async function POST(
   }
 
   stopAnalysisWorker(run.run_id);
-  const updated = updateRun(run.run_id, {
+  const updated = await updateRun(run.run_id, {
     status: "cancelled",
     completed_at: new Date().toISOString(),
   });

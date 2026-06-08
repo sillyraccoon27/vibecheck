@@ -12,9 +12,9 @@ export async function GET(
   if (!user) return errors.unauthorized();
 
   // 폴링 시점에 경과 시간 기준으로 진행률을 전진시킨다(서버리스에서 타이머 대체).
-  const run = advanceRun(params.run_id);
+  const run = await advanceRun(params.run_id);
   if (!run) return errors.notFound("RUN_NOT_FOUND", "해당 분석을 찾을 수 없습니다.");
-  const brand = findBrand(run.brand_id);
+  const brand = await findBrand(run.brand_id);
   if (!brand || brand.user_id !== user.user_id) return errors.forbidden();
 
   const percent =

@@ -26,8 +26,8 @@ export function stopAnalysisWorker(_run_id: string) {
 
 // 경과 시간 기준으로 run의 진행률을 전진시키고, 완료 시 점수를 계산한다.
 // GET 핸들러에서 응답을 만들기 전에 호출한다.
-export function advanceRun(run_id: string): AnalysisRun | null {
-  const run = findRun(run_id);
+export async function advanceRun(run_id: string): Promise<AnalysisRun | null> {
+  const run = await findRun(run_id);
   if (!run) return null;
   if (run.status === "succeeded" || run.status === "failed" || run.status === "cancelled") {
     return run;
@@ -39,7 +39,7 @@ export function advanceRun(run_id: string): AnalysisRun | null {
   const percent = Math.max(0, Math.min(1, elapsed / duration));
 
   if (percent >= 1) {
-    const scored = computeMockScores(run.brand_id);
+    const scored = await computeMockScores(run.brand_id);
     return updateRun(run_id, {
       total_responses_collected: run.expected_responses,
       current_step: 6,
@@ -64,12 +64,12 @@ export function advanceRun(run_id: string): AnalysisRun | null {
   });
 }
 
-function computeMockScores(brand_id: string) {
-  const brand = findBrand(brand_id);
+async function computeMockScores(brand_id: string) {
+  const brand = await findBrand(brand_id);
   const desiredKeywords = (brand?.desired_image ?? "")
     .split(/[,\s]+/)
     .filter(Boolean);
-  const competitorCount = listCompetitors(brand_id).length;
+  const competitorCount = (await listCompetitors(brand_id)).length;
 
   const visibility = clamp(35 + Math.random() * 55, 0, 100);
   const ranking = clamp(40 + Math.random() * 50, 0, 100);

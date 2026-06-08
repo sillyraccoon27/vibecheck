@@ -11,11 +11,11 @@ export async function POST(
   const user = getCurrentUser();
   if (!user) return errors.unauthorized();
 
-  const brand = findBrand(params.brand_id);
+  const brand = await findBrand(params.brand_id);
   if (!brand) return errors.notFound("BRAND_NOT_FOUND", "해당 브랜드를 찾을 수 없습니다.");
   if (brand.user_id !== user.user_id) return errors.forbidden();
 
-  const existing = findActiveRunForBrand(brand.brand_id);
+  const existing = await findActiveRunForBrand(brand.brand_id);
   if (existing) {
     return errors.conflict("RUN_ALREADY_IN_PROGRESS", "이미 진행 중인 분석이 있습니다.");
   }
@@ -29,7 +29,7 @@ export async function POST(
   const sample_size = Math.max(50, Math.min(2000, Number(body.sample_size) || 500));
   const repeat_count = Math.max(1, Math.min(5, Number(body.repeat_count) || 3));
 
-  const run = createRun({
+  const run = await createRun({
     brand_id: brand.brand_id,
     sample_size,
     repeat_count,

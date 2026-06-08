@@ -16,8 +16,8 @@ export default async function DashboardPage({
   const user = getCurrentUser();
   if (!user) redirect("/login");
 
-  const run = findRun(params.run_id);
-  const brand = run ? findBrand(run.brand_id) : null;
+  const run = await findRun(params.run_id);
+  const brand = run ? await findBrand(run.brand_id) : null;
   if (!run || !brand || brand.user_id !== user.user_id) redirect("/brands");
 
   if (run.status !== "succeeded") {
@@ -30,7 +30,7 @@ export default async function DashboardPage({
   const matched = desired.filter((k) => perceived.includes(k));
   const gapKeywords = desired.filter((k) => !perceived.includes(k));
 
-  const competitors = listCompetitors(brand.brand_id);
+  const competitors = await listCompetitors(brand.brand_id);
   const competitorPool =
     competitors.length > 0 ? competitors.map((c) => c.competitor_name) : ["A카페", "B카페", "C카페"];
 

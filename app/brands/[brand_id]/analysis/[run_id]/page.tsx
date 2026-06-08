@@ -6,7 +6,7 @@ import { AnalysisProgress } from "./AnalysisProgress";
 
 export const dynamic = "force-dynamic";
 
-export default function AnalysisProgressPage({
+export default async function AnalysisProgressPage({
   params,
 }: {
   params: { brand_id: string; run_id: string };
@@ -14,9 +14,8 @@ export default function AnalysisProgressPage({
   const user = getCurrentUser();
   if (!user) redirect("/login");
 
-  // 브랜드 소유권만 서버에서 확인. run은 mock 스토어 컨텍스트 차이로 못 찾을 수 있으므로
-  // 클라이언트 polling(AnalysisProgress)에서 처리한다.
-  const brand = findBrand(params.brand_id);
+  // 브랜드 소유권만 서버에서 확인. run 진행 상태는 클라이언트 polling(AnalysisProgress)에서 처리한다.
+  const brand = await findBrand(params.brand_id);
   if (brand && brand.user_id !== user.user_id) redirect("/brands");
 
   return (

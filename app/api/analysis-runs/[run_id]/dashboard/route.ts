@@ -12,9 +12,9 @@ export async function GET(
   if (!user) return errors.unauthorized();
 
   // 대시보드 직접 진입 시에도 진행률을 전진시켜 완료 상태를 보장한다.
-  const run = advanceRun(params.run_id);
+  const run = await advanceRun(params.run_id);
   if (!run) return errors.notFound("RUN_NOT_FOUND", "해당 분석을 찾을 수 없습니다.");
-  const brand = findBrand(run.brand_id);
+  const brand = await findBrand(run.brand_id);
   if (!brand || brand.user_id !== user.user_id) return errors.forbidden();
 
   if (run.status !== "succeeded") {
@@ -33,7 +33,7 @@ export async function GET(
   const matched = desired.filter((k) => perceived.includes(k));
   const gap = desired.filter((k) => !perceived.includes(k));
 
-  const competitors = listCompetitors(brand.brand_id);
+  const competitors = await listCompetitors(brand.brand_id);
   const competitorPool =
     competitors.length > 0
       ? competitors.map((c) => c.competitor_name)

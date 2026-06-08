@@ -7,15 +7,17 @@ import { StartAnalysisButton } from "./StartAnalysisButton";
 
 export const dynamic = "force-dynamic";
 
-export default function BrandDetailPage({ params }: { params: { brand_id: string } }) {
+export default async function BrandDetailPage({ params }: { params: { brand_id: string } }) {
   const user = getCurrentUser();
   if (!user) redirect("/login");
-  const brand = findBrand(params.brand_id);
+  const brand = await findBrand(params.brand_id);
   if (!brand || brand.user_id !== user.user_id) redirect("/brands");
 
-  const links = listBrandLinks(brand.brand_id);
-  const competitors = listCompetitors(brand.brand_id);
-  const latest = findLatestRunForBrand(brand.brand_id);
+  const [links, competitors, latest] = await Promise.all([
+    listBrandLinks(brand.brand_id),
+    listCompetitors(brand.brand_id),
+    findLatestRunForBrand(brand.brand_id),
+  ]);
 
   return (
     <div className="min-h-screen bg-canvas">
