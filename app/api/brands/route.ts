@@ -46,15 +46,18 @@ export async function POST(req: NextRequest) {
     return errors.validation("brand_name, category, region은 필수입니다.");
   }
 
-  const brand = await createBrand({
-    user_id: user.user_id,
-    brand_name,
-    category,
-    region,
-    description: body.description ?? "",
-    desired_image: body.desired_image ?? "",
-    target_customer: body.target_customer ?? "",
-  });
-
-  return created(brand);
+  try {
+    const brand = await createBrand({
+      user_id: user.user_id,
+      brand_name,
+      category,
+      region,
+      description: body.description ?? "",
+      desired_image: body.desired_image ?? "",
+      target_customer: body.target_customer ?? "",
+    });
+    return created(brand);
+  } catch (e) {
+    return errors.server(e);
+  }
 }
